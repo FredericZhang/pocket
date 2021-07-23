@@ -18,7 +18,7 @@ def box_iou(boxes_1: Tensor, boxes_2: Tensor, encoding: str = 'coord') -> Tensor
 
     Arguments:
         boxes_1: (N, 4) Bounding boxes formatted as [[x1, y1, x2, y2],...]
-        boxes_2: (N, 4) Same as above
+        boxes_2: (M, 4) Bounding boxes formatted as [[x1, y1, x2, y2],...]
         encoding: A string that indicates what the boxes encode
             'coord': Coordinates of the two corners
             'pixel': Pixel indices of the two corners
@@ -50,3 +50,45 @@ def box_iou(boxes_1: Tensor, boxes_2: Tensor, encoding: str = 'coord') -> Tensor
         return iou.reshape(n1, n2)
     else:
         raise ValueError("The encoding type should be either \"coord\" or \"pixel\"")
+
+def box_giou(boxes_1: Tensor, boxes_2: Tensor) -> Tensor:
+    """
+    Compute generalised intersection over union between boxes
+
+    Reference: Generalized Intersection over Union: A Metric and A Loss for Bounding Box Regression
+    https://arxiv.org/abs/1902.09630
+
+    Parameters:
+    -----------
+    boxes_1: torch.Tensor
+        Bounding boxes of size (N, 4) formatted as [[x1, y1, x2, y2],...]
+    boxes_2: torch.Tensor
+        Bounding boxes of size (M, 4) formatted as [[x1, y1, x2, y2],...]
+
+    Returns:
+    --------
+    giou: torch.Tensor
+        Generalised IoUs of size (N, M)
+    """
+    i, j = torch.meshgrid(
+        torch.arange(len(boxes_1)),
+        torch.arange(len(boxes_2))
+    )
+    boxes_1 = boxes_1[i]
+    boxes_2 = boxes_2[j]
+
+    x1min, y1min, x2min, y2min = torch.min(boxes_1, boxes_2).unbind(-1)
+    x1max, y1max, x2max, y2max = torch.max(boxes_1, boxes_2).unbind(-1)
+
+    intersection = (x2min - x1max).clamp(min=0) * (y2min - y1max).clamp(min=0)
+    convex_hull = (x2max - x1min) * (y2max - y1min)
+    union = torch.prod(
+        boxes_1[..., 2:] - boxes_1[..., :2], dim=-1
+    ) + torch.prod(
+        boxes_2[..., 2:] - boxes_2[..., :2], dim=-1
+    ) - intersection
+
+    iou = intersection / union
+    giou = iou - (convex_hull - union) / convex_hull
+
+    return giou
